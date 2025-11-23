@@ -1,150 +1,422 @@
-# Project 6: Brevet time calculator service
+# Project 6 – Brevet Time Calculator REST Service
 
-Simple listing service from project 5 stored in MongoDB database.
+Author: Leon Wong  
+Email: tatwingw@uoregon.edu 
 
-## What is in this repository
+This project exposes brevet control times stored in MongoDB as a RESTful API, and provides a simple web consumer that interacts with the API.  
+The data model and MongoDB collection are based on Project 5 (brevet time calculator with MongoDB).
 
-You have a minimal implementation of Docker compose in DockerRestAPI folder, using which you can create REST API-based services (as demonstrated in class). 
+---
 
-## Recap 
+## 1. Repository Structure
 
-You will reuse *your* code from project 5 (https://bitbucket.org/UOCIS322/proj5-mongo). Recall: you created the following functionalities.
+Only the relevant parts for this project are shown:
 
-1. Two buttons ("Submit") and ("Display") in the page where you have controle times.
-2. On clicking the Submit button, the control times were be entered into the database.
-3. On clicking the Display button, the entries from the database were be displayed in a new page.
-4. You also handled error cases appropriately.
+```text
+proj6-rest/
+├── DockerRestAPI/
+│   ├── docker-compose.yml
+│   ├── laptop/              # Flask REST API service
+│   │   ├── Dockerfile
+│   │   ├── api.py
+│   │   ├── acp_times.py     # From Project 5 (not used directly by the API)
+│   │   └── requirements.txt
+│   └── website/             # Consumer (PHP)
+│       ├── Dockerfile
+│       └── index.php
+├── data-samples/            # Example brevet data
+│   ├── sample-data.json
+│   ├── sample-data.csv
+│   └── sample-data-pivoted.csv
+├── README.md
+```
 
-## Functionality you will add
+- **`laptop/api.py`**  
+  Flask / Flask-RESTful application that connects to MongoDB and implements the required endpoints:
+  - `/listAll`
+  - `/listOpenOnly`
+  - `/listCloseOnly`
+  - `/health` (health check)
 
-This project has following four parts. Change the values for host and port according to your machine, and use the web browser to check the results.
+- **`website/index.php`**  
+  PHP consumer UI that calls the API and displays JSON or CSV results.
 
-* You will design RESTful service to expose what is stored in MongoDB. Specifically, you'll use the boilerplate given in DockerRestAPI folder, and create the following three basic APIs:
-    * `http://<host:port>/listAll` should return all open and close times in the database
-    * `http://<host:port>/listOpenOnly` should return open times only
-    * `http://<host:port>/listCloseOnly` should return close times only
+---
 
-* You will also design two different representations: one in csv and one in json. For the above three basic APIs, JSON should be your default representation. 
-    * `http://<host:port>/listAll/csv` should return all open and close times in CSV format
-    * `http://<host:port>/listOpenOnly/csv` should return open times only in CSV format
-    * `http://<host:port>/listCloseOnly/csv` should return close times only in CSV format
+## 2. Docker Services
 
-    * `http://<host:port>/listAll/json` should return all open and close times in JSON format
-    * `http://<host:port>/listOpenOnly/json` should return open times only in JSON format
-    * `http://<host:port>/listCloseOnly/json` should return close times only in JSON format
+`DockerRestAPI/docker-compose.yml` defines three services.
 
-* You will also add a query parameter to get top "k" open and close times. For examples, see below.
+### 2.1 `db` – MongoDB
 
-    * `http://<host:port>/listOpenOnly/csv?top=3` should return top 3 open times only (in ascending order) in CSV format 
-    * `http://<host:port>/listOpenOnly/json?top=5` should return top 5 open times only (in ascending order) in JSON format
-    * `http://<host:port>/listCloseOnly/csv?top=6` should return top 5 close times only (in ascending order) in CSV format
-    * `http://<host:port>/listCloseOnly/json?top=4` should return top 4 close times only (in ascending order) in JSON format
+- Image: `mongo:4.4`  
+- Container name: `brevet-mongodb`  
+- Exposes MongoDB on host port `27017` → `mongodb://localhost:27017/`  
+- Database: `brevets_db`  
+- Collection: `controls`
 
-* You'll also design consumer programs (e.g., in jQuery) to use the service that you expose. "website" inside DockerRestAPI is an example of that. It is uses PHP. You're welcome to use either PHP or jQuery to consume your services. NOTE: your consumer program should be in a different container like example in DockerRestAPI.
+### 2.2 `laptop` – API Service
 
-## Data Samples
+- Build context: `./laptop`  
+- Image name: `dockerrestapi-laptop`  
+- Runs `api.py` (Flask-RESTful)  
+- Listens inside the container on port `5000`  
+- Mapped to host port `5001`  
+  → Base URL from host: `http://localhost:5001`  
+- Connects to MongoDB using the Docker service name: `mongodb://db:27017/`
 
-The sample data files ([sample-data.json](data-samples/sample-data.json), [sample-data.csv](data-samples/sample-data.csv), and [sample-data-pivoted.csv](data-samples/sample-data-pivoted.csv)) provide a suggested JSON and CSV format that you could follow for your exports. 
+### 2.3 `website` – Consumer
 
-1. JSON
+- Build context: `./website`  
+- Image name: `dockerrestapi-website`  
+- Based on `php:7.4-apache`  
+- Serves `index.php` via Apache  
+- Listens inside the container on port `80`  
+- Mapped to host port `8080`  
+  → URL from host: `http://localhost:8080`  
+- Calls the API using the service name `laptop` (for example `http://laptop:5000/...`)
+
+---
+
+## 3. How to Build and Run
+
+### 3.1 Prerequisites
+
+- Docker Desktop (or Docker Engine) installed  
+- `docker compose` command available
+
+### 3.2 Start the System
+
+Open a terminal:
+
+```bash
+cd /path/to/proj6-rest/DockerRestAPI
+docker compose up --build
+```
+
+This command:
+
+- Builds the images for `laptop` and `website`
+- Starts the containers:
+  - `brevet-mongodb` (MongoDB)
+  - `brevet-laptop` (Flask API)
+  - `brevet-website` (PHP consumer)
+
+In another terminal, you can check their status:
+
+```bash
+cd /path/to/proj6-rest/DockerRestAPI
+docker compose ps
+```
+
+Example output:
+
+```text
+NAME             SERVICE   STATUS          PORTS
+brevet-laptop    laptop    Up              0.0.0.0:5001->5000/tcp
+brevet-mongodb   db        Up              0.0.0.0:27017->27017/tcp
+brevet-website   website   Up              0.0.0.0:8080->80/tcp
+```
+
+### 3.3 Stop the System
+
+From the same directory:
+
+```bash
+docker compose down
+```
+
+---
+
+## 4. Data Model
+
+The `controls` collection in `brevets_db` contains one document per control point, with fields such as:
+
+- `brevet_distance` – total distance of the brevet (for example 200, 1000)
+- `begin_date` – brevet start date
+- `begin_time` – brevet start time
+- `km` – control distance in kilometers
+- `miles` – control distance in miles
+- `location` – control location description
+- `open` – control open time as a string
+- `close` – control close time as a string
+
+These documents are created by the Project 5 application or loaded from sample data.
+
+---
+
+## 5. REST API Endpoints
+
+Base URL from the host: `http://localhost:5001`  
+Internally (from other containers), the API is available at `http://laptop:5000`.
+
+If the database is empty, the list endpoints return:
+
+```json
+{ "message": "No data available" }
+```
+
+### 5.1 `/listAll`
+
+Returns both open and close times.
+
+- JSON:
+
+  ```http
+  GET /listAll/json
+  ```
+
+  Example response:
+
+  ```json
+  {
+    "open_times": [
+      { "km": 0, "miles": 0, "location": "begin", "open": "12/01/2021 18:06" },
+      { "km": 100, "miles": 62, "location": null, "open": "12/01/2021 21:02" }
+    ],
+    "close_times": [
+      { "km": 0, "miles": 0, "location": "begin", "close": "12/01/2021 19:06" },
+      { "km": 100, "miles": 62, "location": null, "close": "12/02/2021 00:46" }
+    ]
+  }
+  ```
+
+- CSV:
+
+  ```http
+  GET /listAll/csv
+  ```
+
+  Example format:
+
+  ```csv
+  km,miles,location,open_time,close_time
+  0,0,begin,12/01/2021 18:06,12/01/2021 19:06
+  100,62,,12/01/2021 21:02,12/02/2021 00:46
+  ```
+
+### 5.2 `/listOpenOnly`
+
+Returns only open times.
+
+- JSON:
+
+  ```http
+  GET /listOpenOnly/json
+  ```
+
+  Example response:
+
+  ```json
+  [
+    { "km": 0, "miles": 0, "location": "begin", "open": "12/01/2021 18:06" },
+    { "km": 100, "miles": 62, "location": null, "open": "12/01/2021 21:02" }
+  ]
+  ```
+
+- CSV:
+
+  ```http
+  GET /listOpenOnly/csv
+  ```
+
+  Example format:
+
+  ```csv
+  km,miles,location,open_time
+  0,0,begin,12/01/2021 18:06
+  100,62,,12/01/2021 21:02
+  ```
+
+### 5.3 `/listCloseOnly`
+
+Returns only close times.
+
+- JSON:
+
+  ```http
+  GET /listCloseOnly/json
+  ```
+
+  Example response:
+
+  ```json
+  [
+    { "km": 0, "miles": 0, "location": "begin", "close": "12/01/2021 19:06" },
+    { "km": 100, "miles": 62, "location": null, "close": "12/02/2021 00:46" }
+  ]
+  ```
+
+- CSV:
+
+  ```http
+  GET /listCloseOnly/csv
+  ```
+
+  Example format:
+
+  ```csv
+  km,miles,location,close_time
+  0,0,begin,12/01/2021 19:06
+  100,62,,12/02/2021 00:46
+  ```
+
+### 5.4 Top K query parameter
+
+All three list endpoints support an optional `top` query parameter, which returns only the earliest `K` controls (sorted in ascending order of open time).
+
+Examples:
+
+```bash
+# Top 3 open times (JSON)
+curl "http://localhost:5001/listOpenOnly/json?top=3"
+
+# Top 5 close times (CSV)
+curl "http://localhost:5001/listCloseOnly/csv?top=5"
+
+# Top 2 open and close pairs (JSON) from /listAll
+curl "http://localhost:5001/listAll/json?top=2"
+```
+
+Implementation notes:
+
+- The API sorts controls by the `open` field in ascending order.
+- If `top` is present and valid, slicing is applied to the sorted list(s):
+  - `data[:top_k]` for open-only or close-only
+  - `open_times[:top_k]` and `close_times[:top_k]` for `/listAll`.
+
+### 5.5 `/health`
+
+Health-check endpoint:
+
+```http
+GET /health
+```
+
+Example when the API and MongoDB are healthy:
+
 ```json
 {
-   "brevets":[
-      {
-         "distance":200,
-         "begin_date":"12/01/2021",
-         "begin_time":"18:06",
-         "controls":[
-            {
-               "km":0,
-               "mi":0,
-               "location":"begin",
-               "open":"12/01/2021 18:06",
-               "close":"12/01/2021 19:06"
-            },
-            {
-               "km":100,
-               "mi":62,
-               "location":null,
-               "open":"12/01/2021 21:02",
-               "close":"12/02/2021 00:46"
-            },
-            {
-               "km":150,
-               "mi":93,
-               "location":"second checkpoint",
-               "open":"12/01/2021 22:31",
-               "close":"12/02/2021 04:06"
-            },
-            {
-               "km":200,
-               "mi":124,
-               "location":"last checkpoint",
-               "open":"12/01/2021 23:59",
-               "close":"12/02/2021 07:36"
-            }
-         ]
-      },
-      {
-         "distance":1000,
-         "begin_date":"01/01/2022",
-         "begin_time":"00:00",
-         "controls":[
-            {
-               "km":0,
-               "mi":0,
-               "location":"begin",
-               "open":"01/01/2022 00:00",
-               "close":"01/01/2022 01:00"
-            },
-            {
-               "km":1000,
-               "mi":621,
-               "location":"finish line",
-               "open":"01/01/2022 09:05",
-               "close":"01/04/2022 03:00"
-            }
-         ]
-      }
-   ]
+  "status": "healthy",
+  "database": "connected",
+  "controls_count": 6
 }
 ```
 
-2. CSV
-```csv
-brevets/distance,brevets/begin_date,brevets/begin_time,brevets/controls/0/km,brevets/controls/0/mi,brevets/controls/0/location,brevets/controls/0/open,brevets/controls/0/close,brevets/controls/1/km,brevets/controls/1/mi,brevets/controls/1/location,brevets/controls/1/open,brevets/controls/1/close,brevets/controls/2/km,brevets/controls/2/mi,brevets/controls/2/location,brevets/controls/2/open,brevets/controls/2/close,brevets/controls/3/km,brevets/controls/3/mi,brevets/controls/3/location,brevets/controls/3/open,brevets/controls/3/close
-200,12/01/2021,18:06,0,0,begin,12/01/2021 18:06,12/01/2021 19:06,100,62,,12/01/2021 21:02,12/02/2021 00:46,150,93,second checkpoint,12/01/2021 22:31,12/02/2021 04:06,200,124,last checkpoint,12/01/2021 23:59,12/02/2021 07:36
-1000,01/01/2022,00:00,0,0,begin,01/01/2022 00:00,01/01/2022 01:00,1000,621,finish line,01/01/2022 09:05,01/04/2022 03:00,,,,,,,,,,
+Example when MongoDB is not reachable:
+
+```json
+{
+  "status": "unhealthy",
+  "database": "disconnected"
+}
 ```
 
-## Tasks
+---
 
-You'll turn in your credentials.ini (including the keys `author` and `repo` under the section `[DEFAULT]`) using which we will get the following:
+## 6. Consumer Web Interface (PHP)
 
-* The working application with three parts.
+The consumer application is implemented in `website/index.php` and is served via Apache in the `website` container.
 
-* Dockerfile
+After running `docker compose up --build`, open in a browser:
 
-* docker-compose.yml
+```text
+http://localhost:8080
+```
 
-## Grading Rubric
+Features:
 
-* If your code works as expected: 100 points. This includes:
-    * Basic APIs work as expected. (15 points)
-    * Representations work as expected. (30 points)
-    * Query parameter-based APIs work as expected. (10 points)
-    * Consumer program works as expected. (10 points)
+- Buttons:
+  - `List All Times`
+  - `List Open Only`
+  - `List Close Only`
+- Output format selector:
+  - JSON
+  - CSV
+- Optional `Top K Results` input:
+  - When filled, appends `?top=K` to the API request.
+- Display area:
+  - For JSON: pretty-printed JSON text.
+  - For CSV: HTML table rendered from the CSV response.
 
-* For each non-working API, 5 points will be docked off. If none of them work,
-  you'll get 35 points assuming
-    * README is updated with your name and email ID. (5 points)
-    * The credentials.ini is submitted with the correct URL of your repo. (15 points)
-    * Dockerfile is present. 
-    * Docker-compose.yml works/builds without any errors. (15 points)
+The consumer calls the API using Docker internal URLs, for example:
 
-* If README is not updated, 5 points will be docked off. 
+- `http://laptop:5000/listAll/json`
+- `http://laptop:5000/listOpenOnly/csv?top=3`
 
-* If the Docker-compose.yml doesn't build or is missing, 15 points will be
-  docked off. Same for Dockerfile as well.
+---
 
-* If credentials.ini is missing, 0 will be assigned.
+## 7. Loading Sample Data (Optional)
+
+To test the API with realistic data, you can load `data-samples/sample-data.json` into MongoDB.
+
+### 7.1 Copy sample JSON into the MongoDB container
+
+From the project root:
+
+```bash
+cd /path/to/proj6-rest
+docker cp data-samples/sample-data.json brevet-mongodb:/tmp/sample-data.json
+```
+
+### 7.2 Insert data using the Mongo shell
+
+Enter the Mongo shell:
+
+```bash
+cd DockerRestAPI
+docker compose exec db mongo
+```
+
+In the shell:
+
+```javascript
+use brevets_db
+
+var raw = cat('/tmp/sample-data.json');
+var obj = JSON.parse(raw);
+
+// Optional: clear existing controls
+db.controls.deleteMany({});
+
+// Flatten sample data into one document per control
+obj.brevets.forEach(function(br) {
+  br.controls.forEach(function(c) {
+    db.controls.insertOne({
+      brevet_distance: br.distance,
+      begin_date: br.begin_date,
+      begin_time: br.begin_time,
+      km: c.km,
+      miles: c.mi,
+      location: c.location,
+      open: c.open,
+      close: c.close
+    });
+  });
+});
+
+// Check the inserted documents
+db.controls.find().pretty();
+```
+
+Type `exit` to leave the Mongo shell.
+
+Now the API and the consumer should display real control times based on `sample-data.json`.
+
+---
+
+## 8. Dependencies
+
+The API service uses the following Python packages (see `laptop/requirements.txt`):
+
+- `Flask==2.0.3`
+- `Werkzeug==2.0.3`
+- `flask-restful==0.3.10`
+- `pymongo==3.12.3`
+- `arrow==1.2.3`
+
+They are installed inside the `laptop` container as part of the Docker build.
+
+The consumer uses PHP 7.4 with Apache, based on the official `php:7.4-apache` image.
+
+---
